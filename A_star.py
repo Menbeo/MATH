@@ -1,244 +1,171 @@
 import pygame
-import math
-from queue import PriorityQueue
+import sys
+import heapq
+import random
+WIDTH, HEIGHT = 600, 600
+ROWS, COLS = 10, 10
+TILE_SIZE = WIDTH // COLS
+WHITE = (255, 255, 255)
+GREY = (200, 200, 200)
+BLACK = (0, 0, 0)
+GREEN = (0, 255, 0)
+BLUE = (0, 0, 255)
+RED = (255, 0, 0)
+YELLOW = (255, 255, 0)
+CYAN = (0, 255, 255)
+pygame.init()
+win = pygame.display.set_mode((WIDTH, HEIGHT))
+pygame.display.set_caption("Taxi Race: Dijkstra vs A*")
+start = (0, 0)
+goal_player1 = (0, 9)  # Goal for Player 1
+goal_player2 = (0, 9)  # Goal for Player 2
+player1 = list(start)  # Dijkstra
+player2 = list(start)  # A*
+def generate_obstacles(num_obstacles):
+    obstacles = set()
+    while len(obstacles) < num_obstacles:
+        x = random.randint(0, COLS - 1)
+        y = random.randint(0, ROWS - 1)
+        if (x, y) != start and (x, y) != goal_player1 and (x, y) != goal_player2:
+            obstacles.add((x, y))
+    return obstacles
+def heuristic(a, b):
+    return abs(a[0] - b[0]) + abs(a[1] - b[1])
+def dijkstra(start, goal, obstacles):
+    distances = {start: 0}
+    came_from = {}
+    heap = [(0, start)]
+    visited = set()
 
-WIDTH = 800
-WIN = pygame.display.set_mode((WIDTH, WIDTH))
-pygame.display.set_caption("A* Path Finding Algorithm")
+    while heap:
+        cost, current = heapq.heappop(heap)
+        if current in visited:
+            continue
+        visited.add(current)
+        if current == goal:
+            break
+        x, y = current
+        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nx, ny = x + dx, y + dy
+            if 0 <= nx < COLS and 0 <= ny < ROWS and (nx, ny) not in obstacles:
+                next_node = (nx, ny)
+                new_cost = cost + 1
+                if next_node not in distances or new_cost < distances[next_node]:
+                    distances[next_node] = new_cost
+                    heapq.heappush(heap, (new_cost, next_node))
+                    came_from[next_node] = current
 
-r = (255, 0, 0)
-g = (0, 255, 0)
-b = (0, 255, 0)
-y = (255, 255, 0)
-w = (255, 255, 255)
-bl = (0, 0, 0)
-p = (128, 0, 128)
-o = (255, 165 ,0)
-gr = (128, 128, 128)
-tur = (64, 224, 208)
+    return reconstruct_path(came_from, goal)
+def a_star(start, goal, obstacles):
+    open_set = []
+    heapq.heappush(open_set, (0, start))
+    came_from = {}
+    g_score = {start: 0}
 
-class Node:
-	def __init__(self, row, col, width, total_rows):
-		self.row = row
-		self.col = col
-		self.x = row * width
-		self.y = col * width
-		self.color = w
-		self.neighbors = []
-		self.width = width
-		self.total_rows = total_rows
+    while open_set:
+        _, current = heapq.heappop(open_set)
 
-	def get_pos(self):
-		return self.row, self.col
+        if current == goal:
+            break
 
-	def is_closed(self):
-		return self.color == r
+        x, y = current
+        for dx, dy in [(-1, 0), (1, 0), (0, -1), (0, 1)]:
+            nx, ny = x + dx, y + dy
+            neighbor = (nx, ny)
+            if 0 <= nx < COLS and 0 <= ny < ROWS and neighbor not in obstacles:
+                tentative_g = g_score[current] + 1
+                if neighbor not in g_score or tentative_g < g_score[neighbor]:
+                    g_score[neighbor] = tentative_g
+                    f_score = tentative_g + heuristic(neighbor, goal)
+                    heapq.heappush(open_set, (f_score, neighbor))
+                    came_from[neighbor] = current
 
-	def is_open(self):
-		return self.color == g
+    return reconstruct_path(came_from, goal)
+def reconstruct_path(came_from, current):
+    path = []
+    while current in came_from:
+        path.append(current)
+        current = came_from[current]
+    path.reverse()
+    return path
+num_obstacles = 10
+obstacles = generate_obstacles(num_obstacles)
+path_dijkstra = dijkstra(start, goal_player1, obstacles)
+path_astar = a_star(start, goal_player2, obstacles)
 
-	def is_barrier(self):
-		return self.color == bl
+def draw():
+    win.fill(WHITE)
+    for x in range(0, WIDTH // 2, TILE_SIZE):
+        for y in range(0, HEIGHT, TILE_SIZE):
+            pygame.draw.rect(win, GREY, (x, y, TILE_SIZE, TILE_SIZE), 1)
+    for x in range(WIDTH // 2, WIDTH, TILE_SIZE):
+        for y in range(0, HEIGHT, TILE_SIZE):
+            pygame.draw.rect(win, GREY, (x, y, TILE_SIZE, TILE_SIZE), 1)
+    gx1, gy1 = goal_player1
+    gx2, gy2 = goal_player2
+    pygame.draw.rect(win, GREEN, (gx1 * TILE_SIZE, gy1 * TILE_SIZE, TILE_SIZE, TILE_SIZE))  
+    pygame.draw.rect(win, GREEN, (gx2 * TILE_SIZE + WIDTH // 2, gy2 * TILE_SIZE, TILE_SIZE, TILE_SIZE))  
+    for (ox, oy) in obstacles:
+        pygame.draw.rect(win, BLACK, (ox * TILE_SIZE, oy * TILE_SIZE, TILE_SIZE, TILE_SIZE))
+        pygame.draw.rect(win, BLACK, (ox * TILE_SIZE + WIDTH // 2, oy * TILE_SIZE, TILE_SIZE, TILE_SIZE)) 
+    
+    for (x, y) in path_dijkstra:
+        pygame.draw.circle(win, RED, (x * TILE_SIZE + TILE_SIZE // 2, y * TILE_SIZE + TILE_SIZE // 2), 5) 
 
-	def is_start(self):
-		return self.color == o
+    # A* Path
+    for (x, y) in path_astar:
+        pygame.draw.circle(win, BLUE, (x * TILE_SIZE + TILE_SIZE // 2 + WIDTH // 2, y * TILE_SIZE + TILE_SIZE // 2), 5) # Centered
 
-	def is_end(self):
-		return self.color == tur
+    # Players
+    pygame.draw.rect(win, YELLOW, (player1[0] * TILE_SIZE, player1[1] * TILE_SIZE, TILE_SIZE, TILE_SIZE))  # Dijkstra
+    pygame.draw.rect(win, CYAN, (player2[0] * TILE_SIZE + WIDTH // 2, player2[1] * TILE_SIZE, TILE_SIZE, TILE_SIZE))    # A*
 
-	def reset(self):
-		self.color = w
+    pygame.display.update()
 
-	def make_start(self):
-		self.color = o
+clock = pygame.time.Clock()
+running = True
+winner = None
 
-	def make_closed(self):
-		self.color = r
+while running:
+    clock.tick(10)
+    for event in pygame.event.get():
+        if event.type == pygame.QUIT:
+            running = False
 
-	def make_open(self):
-		self.color = g
+    keys = pygame.key.get_pressed()
 
-	def make_barrier(self):
-		self.color = bl
+    # Player 1 (WASD) - Prevent moving into obstacles
+    if keys[pygame.K_w] and player1[1] > 0 and (player1[0], player1[1] - 1) not in obstacles:
+        player1[1] -= 1
+    if keys[pygame.K_s] and player1[1] < ROWS - 1 and (player1[0], player1[1] + 1) not in obstacles:
+        player1[1] += 1
+    if keys[pygame.K_a] and player1[0] > 0 and (player1[0] - 1, player1[1]) not in obstacles:
+        player1[0] -= 1
+    if keys[pygame.K_d] and player1[0] < COLS - 1 and (player1[0] + 1, player1[1]) not in obstacles:
+        player1[0] += 1
 
-	def make_end(self):
-		self.color = tur
+    # Player 2 (Arrow keys) - Prevent moving into obstacles
+    if keys[pygame.K_UP] and player2[1] > 0 and (player2[0], player2[1] - 1) not in obstacles:
+        player2[1] -= 1
+    if keys[pygame.K_DOWN] and player2[1] < ROWS - 1 and (player2[0], player2[1] + 1) not in obstacles:
+        player2[1] += 1
+    if keys[pygame.K_LEFT] and player2[0] > 0 and (player2[0] - 1, player2[1]) not in obstacles:
+        player2[0] -= 1
+    if keys[pygame.K_RIGHT] and player2[0] < COLS - 1 and (player2[0] + 1, player2[1]) not in obstacles:
+        player2[0] += 1
 
-	def make_path(self):
-		self.color = p
+    draw()
 
-	def draw(self, win):
-		pygame.draw.rect(win, self.color, (self.x, self.y, self.width, self.width))
+    # Check for winning conditions
+    if tuple(player1) == goal_player1 and winner is None:
+        winner = "Player 1 (Dijkstra)"
+    if tuple(player2) == goal_player2 and winner is None:
+        winner = "Player 2 (A*)"
 
-	def update_neighbors(self, grid):
-		self.neighbors = []
-		if self.row < self.total_rows - 1 and not grid[self.row + 1][self.col].is_barrier(): # DOWN
-			self.neighbors.append(grid[self.row + 1][self.col])
+    if winner:
+        print(f"{winner} wins!")
+        pygame.time.wait(2000)
+        running = False
 
-		if self.row > 0 and not grid[self.row - 1][self.col].is_barrier(): # UP
-			self.neighbors.append(grid[self.row - 1][self.col])
-
-		if self.col < self.total_rows - 1 and not grid[self.row][self.col + 1].is_barrier(): # RIGHT
-			self.neighbors.append(grid[self.row][self.col + 1])
-
-		if self.col > 0 and not grid[self.row][self.col - 1].is_barrier(): # LEFT
-			self.neighbors.append(grid[self.row][self.col - 1])
-
-	def __lt__(self, other):
-		return False
-
-
-def h(p1, p2):
-	x1, y1 = p1
-	x2, y2 = p2
-	return abs(x1 - x2) + abs(y1 - y2)
-
-
-def reconstruct_path(came_from, current, draw):
-	while current in came_from:
-		current = came_from[current]
-		current.make_path()
-		draw()
-
-def algorithm(draw, grid, start, end):
-	count = 0
-	open_set = PriorityQueue()
-	open_set.put((0, count, start))
-	came_from = {}
-	g_score = {spot: float("inf") for row in grid for spot in row}
-	g_score[start] = 0
-	f_score = {spot: float("inf") for row in grid for spot in row}
-	f_score[start] = h(start.get_pos(), end.get_pos())
-
-	open_set_hash = {start}
-
-	while not open_set.empty():
-		for event in pygame.event.get():
-			if event.type == pygame.QUIT:
-				pygame.quit()
-
-		current = open_set.get()[2]
-		open_set_hash.remove(current)
-
-		if current == end:
-			reconstruct_path(came_from, end, draw)
-			end.make_end()
-			return True
-
-		for neighbor in current.neighbors:
-			temp_g_score = g_score[current] + 1
-
-			if temp_g_score < g_score[neighbor]:
-				came_from[neighbor] = current
-				g_score[neighbor] = temp_g_score
-				f_score[neighbor] = temp_g_score + h(neighbor.get_pos(), end.get_pos())
-				if neighbor not in open_set_hash:
-					count += 1
-					open_set.put((f_score[neighbor], count, neighbor))
-					open_set_hash.add(neighbor)
-					neighbor.make_open()
-
-		draw()
-
-		if current != start:
-			current.make_closed()
-
-	return False
-
-
-def make_grid(rows, width):
-	grid = []
-	gap = width // rows
-	for i in range(rows):
-		grid.append([])
-		for j in range(rows):
-			spot = Node(i, j, gap, rows)
-			grid[i].append(spot)
-
-	return grid
-
-
-def draw_grid(win, rows, width):
-	gap = width // rows
-	for i in range(rows):
-		pygame.draw.line(win, gr, (0, i * gap), (width, i * gap))
-		for j in range(rows):
-			pygame.draw.line(win, gr, (j * gap, 0), (j * gap, width))
-
-
-def draw(win, grid, rows, width):
-	win.fill(w)
-
-	for row in grid:
-		for spot in row:
-			spot.draw(win)
-
-	draw_grid(win, rows, width)
-	pygame.display.update()
-
-
-def get_clicked_pos(pos, rows, width):
-	gap = width // rows
-	y, x = pos
-
-	row = y // gap
-	col = x // gap
-
-	return row, col
-
-
-def main(win, width):
-	ROWS = 20
-	grid = make_grid(ROWS, width)
-
-	start = None
-	end = None
-
-	run = True
-	while run:
-		draw(win, grid, ROWS, width)
-		for event in pygame.event.get():
-			if event.type == pygame.QUIT:
-				run = False
-
-			if pygame.mouse.get_pressed()[0]: 
-				pos = pygame.mouse.get_pos()
-				row, col = get_clicked_pos(pos, ROWS, width)
-				spot = grid[row][col]
-				if not start and spot != end:
-					start = spot
-					start.make_start()
-
-				elif not end and spot != start:
-					end = spot
-					end.make_end()
-
-				elif spot != end and spot != start:
-					spot.make_barrier()
-
-			elif pygame.mouse.get_pressed()[2]: 
-				pos = pygame.mouse.get_pos()
-				row, col = get_clicked_pos(pos, ROWS, width)
-				spot = grid[row][col]
-				spot.reset()
-				if spot == start:
-					start = None
-				elif spot == end:
-					end = None
-
-			if event.type == pygame.KEYDOWN:
-				if event.key == pygame.K_SPACE and start and end:
-					for row in grid:
-						for spot in row:
-							spot.update_neighbors(grid)
-
-					algorithm(lambda: draw(win, grid, ROWS, width), grid, start, end)
-
-				if event.key == pygame.K_c:
-					start = None
-					end = None
-					grid = make_grid(ROWS, width)
-
-	pygame.quit()
-
-main(WIN, WIDTH)
+pygame.quit()
+sys.exit()
